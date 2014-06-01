@@ -1,7 +1,12 @@
 {
-  "shell-version": ["3.12.2"],
   "uuid": "Alsa_Mixer@fasdfasdas.gmail.com",
   "name": "Alsa Mixer",
-  "description":
-  "Control Alsa master volume from status menu."
+  "description": "Control Alsa master volume from status menu.",
+  "original-author": "Tolga HOŞGÖR <fasdfasdas@gmail.com>",
+  "shell-version": [
+    "3.10", 
+    "3.12",
+    "3.12.2"
+  ],
+  "url": "https://github.com/metherealone/gnome-shell-extension-alsamixer"
 }

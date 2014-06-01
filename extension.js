@@ -23,7 +23,7 @@ const Slider = imports.ui.slider;
 const GLib = imports.gi.GLib;
 
 let menu = Main.panel.statusArea.aggregateMenu;
-let label, item, slider, icon;
+let label, item, slider, icon, isPulseRunning;
 
 function getAudioIcon(percent) {
   let audioIcons = new Array('audio-volume-muted-symbolic', 'audio-volume-low-symbolic', 'audio-volume-medium-symbolic', 'audio-volume-high-symbolic');
@@ -63,8 +63,24 @@ function enable() {
   
   //add to status menu
   menu.menu.addMenuItem(item, 0);
+  
+  let cmd = GLib.spawn_command_line_sync('pgrep pulseaudio');
+  let re = /\[(\d+)\%\]/m;
+  isPulseRunning = re.exec(cmd[1]) > 0;
+  
+  if(!isPulseRunning)
+  {
+    menu._volume.indicators.hide();
+    menu._volume._volumeMenu.actor.hide();
+  }
 }
 
 function disable() {
+  if(!isPulseRunning)
+  {
+    menu._volume.indicators.show();
+    menu._volume._volumeMenu.actor.show();
+  }
+  
   item.destroy();
 }
