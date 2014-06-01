@@ -1,0 +1,7 @@
+{
+  "shell-version": ["3.12.2"],
+  "uuid": "Alsa_Mixer@fasdfasdas.gmail.com",
+  "name": "Alsa Mixer",
+  "description":
+  "Control Alsa master volume from status menu."
+}
