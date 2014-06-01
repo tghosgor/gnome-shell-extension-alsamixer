@@ -19,11 +19,12 @@ const St = imports.gi.St;
 const Main = imports.ui.main;
 const Tweener = imports.ui.tweener;
 const PopupMenu = imports.ui.popupMenu;
+const PanelMenu = imports.ui.panelMenu;
 const Slider = imports.ui.slider;
 const GLib = imports.gi.GLib;
 
-let menu = Main.panel.statusArea.aggregateMenu;
-let label, item, slider, icon, isPulseRunning;
+let statusMenu = Main.panel.statusArea.aggregateMenu;
+let label, item, indicators, indicatorIcon = null, slider, menuIcon, isPulseRunning;
 
 function getAudioIcon(percent) {
   let audioIcons = new Array('audio-volume-muted-symbolic', 'audio-volume-low-symbolic', 'audio-volume-medium-symbolic', 'audio-volume-high-symbolic');
@@ -33,7 +34,9 @@ function getAudioIcon(percent) {
 
 function onValueChanged() {
   let cmd = GLib.spawn_command_line_sync('env LANG=C amixer set %s %d'.format("Master", parseInt(slider._getCurrentValue() * 64)));
-  icon.set_icon_name(getAudioIcon(slider._getCurrentValue() * 100));
+  let iconName = getAudioIcon(slider._getCurrentValue() * 100);
+  menuIcon.set_icon_name(iconName);
+  indicatorIcon.set_icon_name(iconName);
 }
 
 function readVolume() {
@@ -53,33 +56,47 @@ function enable() {
   slider.connect('value-changed', onValueChanged);
   
   //create the initial icons      
-  icon = new St.Icon({ icon_name: getAudioIcon(slider._getCurrentValue() * 100),
+  let iconName = getAudioIcon(slider._getCurrentValue() * 100);
+  menuIcon = new St.Icon({ icon_name: iconName,
+    style_class: 'system-status-icon' });
+  indicatorIcon = new St.Icon({ icon_name: iconName,
     style_class: 'system-status-icon' });
   
   //create the popup menu item
   item = new PopupMenu.PopupBaseMenuItem({ activate: false });
-  item.actor.add(icon);
+  item.actor.add(menuIcon);
   item.actor.add(slider.actor, { expand: true });
   
   //add to status menu
-  menu.menu.addMenuItem(item, 0);
+  statusMenu.menu.addMenuItem(item, 0);
   
   let cmd = GLib.spawn_command_line_sync('pgrep pulseaudio');
   let re = /\[(\d+)\%\]/m;
   isPulseRunning = re.exec(cmd[1]) > 0;
   
+  //if pulse isn't running
   if(!isPulseRunning)
   {
-    menu._volume.indicators.hide();
-    menu._volume._volumeMenu.actor.hide();
+    //add our icon to indicators
+    statusMenu._indicators.add_child(indicatorIcon);
+    
+    //hide default volume indicator
+    statusMenu._volume.indicators.hide();
+    //hide default volume mixer
+    statusMenu._volume._volumeMenu.actor.hide();
   }
 }
 
 function disable() {
   if(!isPulseRunning)
   {
-    menu._volume.indicators.show();
-    menu._volume._volumeMenu.actor.show();
+    //show default volume indicator
+    statusMenu._volume.indicators.show();
+    //show default volume mixer
+    statusMenu._volume._volumeMenu.actor.show();
+    
+    //remove our icon from indicators
+    statusMenu._indicators.remove_child(indicatorIcon);
   }
   
   item.destroy();
