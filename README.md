@@ -1,4 +1,4 @@
 gnome-shell-extension-alsamixer
 ===============================
 
-Directly controls Alsa through alsactl.
+Control Alsa master volume from status menu.
