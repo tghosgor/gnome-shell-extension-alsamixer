@@ -51,6 +51,7 @@ function readVolume(callback) {
   let [success, pid, stdin, stdout, stderr] = GLib.spawn_async_with_pipes(null,
     ['/usr/bin/amixer', 'get', 'Master'], ['LANG=C'], 0, null);
   GLib.close(stderr);
+  GLib.close(stdin);
   amixerStdout = stdout;
     
   dataStdout = new Gio.DataInputStream({
