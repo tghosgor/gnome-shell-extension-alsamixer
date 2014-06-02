@@ -24,7 +24,7 @@ const Slider = imports.ui.slider;
 const GLib = imports.gi.GLib;
 
 let statusMenu = Main.panel.statusArea.aggregateMenu;
-let label, item, indicators, indicatorIcon = null, slider, menuIcon, isPulseRunning;
+let label, item, indicators, indicatorIcon = null, slider, menuIcon;
 
 function getAudioIcon(percent) {
   let audioIcons = new Array('audio-volume-muted-symbolic', 'audio-volume-low-symbolic', 'audio-volume-medium-symbolic', 'audio-volume-high-symbolic');
@@ -33,12 +33,14 @@ function getAudioIcon(percent) {
 }
 
 function onValueChanged() {
-  let cmd = GLib.spawn_command_line_sync('env LANG=C amixer set %s %d'.format("Master", parseInt(slider._getCurrentValue() * 64)));
+  let cmd = GLib.spawn_command_line_async('env LANG=C amixer set %s %d'.format("Master", parseInt(slider._getCurrentValue() * 64)));
   let iconName = getAudioIcon(slider._getCurrentValue() * 100);
   menuIcon.set_icon_name(iconName);
   indicatorIcon.set_icon_name(iconName);
 }
 
+//expensive because of GLib.spawn_command_line_sync
+//only used on enable anyway
 function readVolume() {
   let cmd = GLib.spawn_command_line_sync('env LANG=C amixer get %s'.format("Master"));
   let re = /\[(\d{1,3})\%\]/m;
@@ -70,34 +72,29 @@ function enable() {
   //add to status menu
   statusMenu.menu.addMenuItem(item, 0);
   
-  let cmd = GLib.spawn_command_line_sync('pgrep pulseaudio');
-  let re = /\[(\d+)\%\]/m;
-  isPulseRunning = re.exec(cmd[1]) > 0;
+  //add our icon to indicators
+  statusMenu._indicators.insert_child_above(indicatorIcon, statusMenu._volume.indicators);
   
-  //if pulse isn't running
-  if(!isPulseRunning)
-  {
-    //add our icon to indicators
-    statusMenu._indicators.add_child(indicatorIcon);
-    
-    //hide default volume indicator
-    statusMenu._volume.indicators.hide();
-    //hide default volume mixer
+  //hide the volume mixer from menu if volume indicator is hidden
+  if(!statusMenu._volume.indicators.visible)
     statusMenu._volume._volumeMenu.actor.hide();
-  }
+  
+  //check if the volume indicator is hidden and change volume mixer visibility
+  statusMenu._volume.indicators.connect('notify::visible',
+    function(a) {      
+      if(!a.visible) {
+        //hide default volume mixer
+        statusMenu._volume._volumeMenu.actor.hide();
+      } else {
+        //show default volume mixer
+        statusMenu._volume._volumeMenu.actor.show();
+      }
+    });
 }
 
 function disable() {
-  if(!isPulseRunning)
-  {
-    //show default volume indicator
-    statusMenu._volume.indicators.show();
-    //show default volume mixer
-    statusMenu._volume._volumeMenu.actor.show();
-    
-    //remove our icon from indicators
-    statusMenu._indicators.remove_child(indicatorIcon);
-  }
-  
+  statusMenu._indicators.remove_child(indicatorIcon);
   item.destroy();
+  
+  statusMenu._volume._volumeMenu.actor.show();
 }
