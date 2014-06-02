@@ -22,16 +22,22 @@ const PopupMenu = imports.ui.popupMenu;
 const PanelMenu = imports.ui.panelMenu;
 const Slider = imports.ui.slider;
 const GLib = imports.gi.GLib;
+const Gio = imports.gi.Gio;
+const Lang = imports.lang;
+const Mainloop = imports.mainloop;
 
 let statusMenu = Main.panel.statusArea.aggregateMenu;
 let label, item, indicators, indicatorIcon = null, slider, menuIcon;
+let amixerStdout, out_reader, dataStdout;
 
+//returns audio icon name based on percent
 function getAudioIcon(percent) {
   let audioIcons = new Array('audio-volume-muted-symbolic', 'audio-volume-low-symbolic', 'audio-volume-medium-symbolic', 'audio-volume-high-symbolic');
   let iconIndex = (percent ? parseInt(percent / (101 / 3)) + 1 : 0);
   return audioIcons[iconIndex];
 }
 
+//slider changed
 function onValueChanged() {
   let cmd = GLib.spawn_command_line_async('env LANG=C amixer set %s %d'.format("Master", parseInt(slider._getCurrentValue() * 64)));
   let iconName = getAudioIcon(slider._getCurrentValue() * 100);
@@ -41,12 +47,51 @@ function onValueChanged() {
 
 //expensive because of GLib.spawn_command_line_sync
 //only used on enable anyway
-function readVolume() {
-  let cmd = GLib.spawn_command_line_sync('env LANG=C amixer get %s'.format("Master"));
-  let re = /\[(\d{1,3})\%\]/m;
-  let values = re.exec(cmd[1]);
+function readVolume(callback) {
+  let [success, pid, stdin, stdout, stderr] = GLib.spawn_async_with_pipes(null,
+    ['/usr/bin/amixer', 'get', 'Master'], ['LANG=C'], 0, null);
+  GLib.close(stderr);
+  amixerStdout = stdout;
+    
+  dataStdout = new Gio.DataInputStream({
+    base_stream: new Gio.UnixInputStream({fd: stdout, close_fd: true})
+  });
   
-  return values[1];
+  //allocate enough buffer space
+  dataStdout.set_buffer_size(512);
+  
+  let readCallback = function(stream, result) {
+    let cnt = dataStdout.fill_finish(result);
+
+    if (cnt == 0) {
+      dataStdout.close(null);
+      return;
+    }
+    
+    let data = dataStdout.peek_buffer();
+  
+    let re = /\[(\d{1,3})\%\]/m;
+    let values = re.exec(data);
+    
+    callback(values[1]);
+    
+    dataStdout.close(null);
+  };
+  
+  dataStdout.fill_async(-1, GLib.PRIORITY_DEFAULT, null, Lang.bind(this, readCallback));
+}
+
+function amixerUpdate() {
+  readVolume(function(percent) {
+    //set the value of the slider
+    slider.setValue(parseFloat(percent / 100));
+    //set icons
+    let iconName = getAudioIcon(slider._getCurrentValue() * 100);
+    indicatorIcon.set_icon_name(iconName);
+    menuIcon.set_icon_name(iconName);
+  
+    Mainloop.timeout_add_seconds(1, amixerUpdate);
+  });
 }
 
 function init() {
@@ -54,7 +99,7 @@ function init() {
 
 function enable() {     
   //create the slider
-  slider = new Slider.Slider(parseFloat(readVolume() / 100));
+  slider = new Slider.Slider(0);
   slider.connect('value-changed', onValueChanged);
   
   //create the initial icons      
@@ -63,6 +108,9 @@ function enable() {
     style_class: 'system-status-icon' });
   indicatorIcon = new St.Icon({ icon_name: iconName,
     style_class: 'system-status-icon' });
+  
+  //read volume async
+  amixerUpdate();
   
   //create the popup menu item
   item = new PopupMenu.PopupBaseMenuItem({ activate: false });
@@ -75,26 +123,37 @@ function enable() {
   //add our icon to indicators
   statusMenu._indicators.insert_child_above(indicatorIcon, statusMenu._volume.indicators);
   
-  //hide the volume mixer from menu if volume indicator is hidden
-  if(!statusMenu._volume.indicators.visible)
-    statusMenu._volume._volumeMenu.actor.hide();
+  //if default volume indicator is visible
+  if(statusMenu._volume.indicators.visible)
+    indicatorIcon.hide(); //hide our indicator 
+  else 
+    statusMenu._volume._volumeMenu.actor.hide(); //else hide default volume sliders
   
-  //check if the volume indicator is hidden and change volume mixer visibility
+  //on default volume indicator visibility change
   statusMenu._volume.indicators.connect('notify::visible',
-    function(a) {      
-      if(!a.visible) {
-        //hide default volume mixer
-        statusMenu._volume._volumeMenu.actor.hide();
-      } else {
-        //show default volume mixer
+    function(a) {
+      //if is visible
+      if(a.visible) {
+        //hide our volume mixer
+        indicatorIcon.hide();
+        
+        //show default volume sliders
         statusMenu._volume._volumeMenu.actor.show();
+      } else {
+        //show our volume mixer
+        indicatorIcon.show();
+        
+        //hide default volume sliders
+        statusMenu._volume._volumeMenu.actor.hide();
       }
     });
 }
 
 function disable() {
+  //restore the default volume sliders
+  statusMenu._volume._volumeMenu.actor.show();
+  
+  //remove our indicator
   statusMenu._indicators.remove_child(indicatorIcon);
   item.destroy();
-  
-  statusMenu._volume._volumeMenu.actor.show();
 }
