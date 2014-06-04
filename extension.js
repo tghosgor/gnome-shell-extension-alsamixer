@@ -27,7 +27,7 @@ const Lang = imports.lang;
 const Mainloop = imports.mainloop;
 
 let statusMenu = Main.panel.statusArea.aggregateMenu;
-let label, item, indicators, indicatorIcon = null, slider, menuIcon;
+let interval, label, item, indicators, indicatorIcon = null, slider, menuIcon, volumeVisibilitySignal;
 let amixerStdout, out_reader, dataStdout;
 
 //returns audio icon name based on percent
@@ -53,7 +53,7 @@ function readVolume(callback) {
   GLib.close(stderr);
   GLib.close(stdin);
   amixerStdout = stdout;
-    
+  
   dataStdout = new Gio.DataInputStream({
     base_stream: new Gio.UnixInputStream({fd: stdout, close_fd: true})
   });
@@ -61,26 +61,33 @@ function readVolume(callback) {
   //allocate enough buffer space
   dataStdout.set_buffer_size(512);
   
-  let readCallback = function(stream, result) {
-    let cnt = dataStdout.fill_finish(result);
-
-    if (cnt == 0) {
-      dataStdout.close(null);
-      return;
-    }
-    
-    let data = dataStdout.peek_buffer();
+  var cb = amixerReadCb.bind(this, callback);
   
-    let re = /\[(\d{1,3})\%\]/m;
-    let values = re.exec(data);
-    
-    callback(values[1]);
-    
-    dataStdout.close(null);
-  };
-  
-  dataStdout.fill_async(-1, GLib.PRIORITY_DEFAULT, null, Lang.bind(this, readCallback));
+  dataStdout.fill_async(-1, GLib.PRIORITY_DEFAULT, null, cb);
 }
+
+function amixerReadCb(callback, stream, result) {
+  let cnt = dataStdout.fill_finish(result);
+
+  if (cnt == 0) {
+    dataStdout.close(null);
+    return;
+  }
+    
+  let data = dataStdout.peek_buffer();
+  
+  let re = /\[(\d{1,3})\%\]/m;
+  let values = re.exec(data);
+  
+  log(values[1]);
+  
+  if(values != null && !isNaN(values[1]))
+  {
+    callback(values[1]);
+    return;
+  } else  
+    dataStdout.fill_async(-1, GLib.PRIORITY_DEFAULT, null, callback);
+};
 
 function amixerUpdate() {
   readVolume(function(percent) {
@@ -91,14 +98,14 @@ function amixerUpdate() {
     indicatorIcon.set_icon_name(iconName);
     menuIcon.set_icon_name(iconName);
   
-    Mainloop.timeout_add_seconds(1, amixerUpdate);
+    interval = Mainloop.timeout_add_seconds(1, amixerUpdate);
   });
 }
 
 function init() {
 }
 
-function enable() {     
+function enable() {
   //create the slider
   slider = new Slider.Slider(0);
   slider.connect('value-changed', onValueChanged);
@@ -131,7 +138,7 @@ function enable() {
     statusMenu._volume._volumeMenu.actor.hide(); //else hide default volume sliders
   
   //on default volume indicator visibility change
-  statusMenu._volume.indicators.connect('notify::visible',
+  volumeVisibilitySignal = statusMenu._volume.indicators.connect('notify::visible',
     function(a) {
       //if is visible
       if(a.visible) {
@@ -151,6 +158,10 @@ function enable() {
 }
 
 function disable() {
+  Mainloop.source_remove(interval);
+  
+  statusMenu._volume.indicators.disconnect(volumeVisibilitySignal);
+  
   //restore the default volume sliders
   statusMenu._volume._volumeMenu.actor.show();
   
