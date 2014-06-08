@@ -26,9 +26,9 @@ const Gio = imports.gi.Gio;
 const Lang = imports.lang;
 const Mainloop = imports.mainloop;
 
-let statusMenu = Main.panel.statusArea.aggregateMenu;
-let interval, label, item, indicators, indicatorIcon = null, slider, menuIcon, volumeVisibilitySignal;
-let amixerStdout, out_reader, dataStdout;
+let statusMenuId = Main.panel.statusArea.aggregateMenu;
+let timeoutId, labelId, itemId, indicatorIconId = null, sliderId, menuIconId, volumeVisibleId;
+let amixerStdoutId, outReaderId, dataStdoutId;
 
 //returns audio icon name based on percent
 function getAudioIcon(percent) {
@@ -37,12 +37,15 @@ function getAudioIcon(percent) {
   return audioIcons[iconIndex];
 }
 
-//slider changed
+//sliderId changed
 function onValueChanged() {
-  let cmd = GLib.spawn_command_line_async('env LANG=C amixer set %s %d'.format("Master", parseInt(slider._getCurrentValue() * 64)));
-  let iconName = getAudioIcon(slider._getCurrentValue() * 100);
-  menuIcon.set_icon_name(iconName);
-  indicatorIcon.set_icon_name(iconName);
+  let [isOk, pid] = GLib.spawn_async('/', ['/usr/bin/amixer', 'set', 'Master', '%d'.format(parseInt(sliderId._getCurrentValue() * 64))], ['LANGC=C'], GLib.SpawnFlags.STDOUT_TO_DEV_NULL, null);
+  if(isOk)
+  {
+    let iconName = getAudioIcon(sliderId._getCurrentValue() * 100);
+    menuIconId.set_icon_name(iconName);
+    indicatorIconId.set_icon_name(iconName);
+  }
 }
 
 //expensive because of GLib.spawn_command_line_sync
@@ -52,53 +55,51 @@ function readVolume(callback) {
     ['/usr/bin/amixer', 'get', 'Master'], ['LANG=C'], 0, null);
   GLib.close(stderr);
   GLib.close(stdin);
-  amixerStdout = stdout;
+  amixerStdoutId = stdout;
   
-  dataStdout = new Gio.DataInputStream({
+  dataStdoutId = new Gio.DataInputStream({
     base_stream: new Gio.UnixInputStream({fd: stdout, close_fd: true})
   });
   
   //allocate enough buffer space
-  dataStdout.set_buffer_size(512);
+  dataStdoutId.set_buffer_size(512);
   
-  var cb = amixerReadCb.bind(this, callback);
+  let cb = amixerReadCb.bind(this, callback);
   
-  dataStdout.fill_async(-1, GLib.PRIORITY_DEFAULT, null, cb);
+  dataStdoutId.fill_async(-1, GLib.PRIORITY_DEFAULT, null, cb);
 }
 
 function amixerReadCb(callback, stream, result) {
-  let cnt = dataStdout.fill_finish(result);
+  let cnt = dataStdoutId.fill_finish(result);
 
   if (cnt == 0) {
-    dataStdout.close(null);
+    dataStdoutId.close(null);
     return;
   }
     
-  let data = dataStdout.peek_buffer();
+  let data = dataStdoutId.peek_buffer();
   
   let re = /\[(\d{1,3})\%\]/m;
   let values = re.exec(data);
-  
-  log(values[1]);
   
   if(values != null && !isNaN(values[1]))
   {
     callback(values[1]);
     return;
   } else  
-    dataStdout.fill_async(-1, GLib.PRIORITY_DEFAULT, null, callback);
+    dataStdoutId.fill_async(-1, GLib.PRIORITY_DEFAULT, null, callback);
 };
 
 function amixerUpdate() {
   readVolume(function(percent) {
-    //set the value of the slider
-    slider.setValue(parseFloat(percent / 100));
+    //set the value of the sliderId
+    sliderId.setValue(parseFloat(percent / 100));
     //set icons
-    let iconName = getAudioIcon(slider._getCurrentValue() * 100);
-    indicatorIcon.set_icon_name(iconName);
-    menuIcon.set_icon_name(iconName);
+    let iconName = getAudioIcon(sliderId._getCurrentValue() * 100);
+    indicatorIconId.set_icon_name(iconName);
+    menuIconId.set_icon_name(iconName);
   
-    interval = Mainloop.timeout_add_seconds(1, amixerUpdate);
+    timeoutId = Mainloop.timeout_add_seconds(1, amixerUpdate);
   });
 }
 
@@ -106,66 +107,70 @@ function init() {
 }
 
 function enable() {
-  //create the slider
-  slider = new Slider.Slider(0);
-  slider.connect('value-changed', onValueChanged);
+  //create the sliderId
+  sliderId = new Slider.Slider(0);
+  sliderId.connect('value-changed', onValueChanged);
   
   //create the initial icons      
-  let iconName = getAudioIcon(slider._getCurrentValue() * 100);
-  menuIcon = new St.Icon({ icon_name: iconName,
+  let iconName = getAudioIcon(sliderId._getCurrentValue() * 100);
+  menuIconId = new St.Icon({ icon_name: iconName,
     style_class: 'system-status-icon' });
-  indicatorIcon = new St.Icon({ icon_name: iconName,
+  indicatorIconId = new St.Icon({ icon_name: iconName,
     style_class: 'system-status-icon' });
   
   //read volume async
   amixerUpdate();
   
-  //create the popup menu item
-  item = new PopupMenu.PopupBaseMenuItem({ activate: false });
-  item.actor.add(menuIcon);
-  item.actor.add(slider.actor, { expand: true });
+  //create the popup menu itemId
+  itemId = new PopupMenu.PopupBaseMenuItem({ activate: false });
+  itemId.actor.add(menuIconId);
+  itemId.actor.add(sliderId.actor, { expand: true });
   
   //add to status menu
-  statusMenu.menu.addMenuItem(item, 0);
+  statusMenuId.menu.addMenuItem(itemId, 0);
   
   //add our icon to indicators
-  statusMenu._indicators.insert_child_above(indicatorIcon, statusMenu._volume.indicators);
+  statusMenuId._indicators.insert_child_above(indicatorIconId, statusMenuId._volume.indicators);
   
   //if default volume indicator is visible
-  if(statusMenu._volume.indicators.visible)
-    indicatorIcon.hide(); //hide our indicator 
+  if(statusMenuId._volume.indicators.visible)
+    indicatorIconId.hide(); //hide our indicator
   else 
-    statusMenu._volume._volumeMenu.actor.hide(); //else hide default volume sliders
+    statusMenuId._volume._volumeMenu.actor.hide(); //else hide default volume slider
   
   //on default volume indicator visibility change
-  volumeVisibilitySignal = statusMenu._volume.indicators.connect('notify::visible',
+  volumeVisibleId = statusMenuId._volume.indicators.connect('notify::visible',
     function(a) {
       //if is visible
       if(a.visible) {
-        //hide our volume mixer
-        indicatorIcon.hide();
+        //hide our volume indicator
+        indicatorIconId.hide();
+        //hide our volume slider
+        itemId.actor.hide();
         
-        //show default volume sliders
-        statusMenu._volume._volumeMenu.actor.show();
+        //show default volume sliderIds
+        statusMenuId._volume._volumeMenu.actor.show();
       } else {
-        //show our volume mixer
-        indicatorIcon.show();
+        //show our volume indicator
+        indicatorIconId.show();
+        //show our volume slider
+        itemId.actor.show();
         
-        //hide default volume sliders
-        statusMenu._volume._volumeMenu.actor.hide();
+        //hide default volume sliderIds
+        statusMenuId._volume._volumeMenu.actor.hide();
       }
     });
 }
 
 function disable() {
-  Mainloop.source_remove(interval);
+  Mainloop.source_remove(timeoutId);
   
-  statusMenu._volume.indicators.disconnect(volumeVisibilitySignal);
+  statusMenuId._volume.indicators.disconnect(volumeVisibleId);
   
-  //restore the default volume sliders
-  statusMenu._volume._volumeMenu.actor.show();
+  //restore the default volume sliderIds
+  statusMenuId._volume._volumeMenu.actor.show();
   
   //remove our indicator
-  statusMenu._indicators.remove_child(indicatorIcon);
-  item.destroy();
+  statusMenuId._indicators.remove_child(indicatorIconId);
+  itemId.destroy();
 }
