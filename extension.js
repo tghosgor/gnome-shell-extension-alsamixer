@@ -42,9 +42,9 @@ function onValueChanged() {
   let [success, pid] = GLib.spawn_async('/', ['/usr/bin/amixer', 'set', 'Master', '%d'.format(parseInt(sliderId._getCurrentValue() * 64))], ['LANGC=C'], GLib.SpawnFlags.STDOUT_TO_DEV_NULL, null);
   if(success)
   {
-	//prevent slider to move after set due to rounding error
-	//expand to 64, then expand to 100 then normalize to 1
-	let rounded = Math.round(parseInt(sliderId._getCurrentValue() * 64) * (100 / 64)) / 100;
+    //prevent slider to move after set due to rounding error
+    //expand to 64, then expand to 100 then normalize to 1
+    let rounded = Math.round(parseInt(sliderId._getCurrentValue() * 64) * (100 / 64)) / 100;
     sliderId.setValue(rounded);
     //get appropriate icon name
     let iconName = getAudioIcon(sliderId._getCurrentValue() * 100);
