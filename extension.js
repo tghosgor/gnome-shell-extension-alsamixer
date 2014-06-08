@@ -93,7 +93,7 @@ function amixerReadCb(callback, stream, result) {
     return;
   } else  
     dataStdoutId.fill_async(-1, GLib.PRIORITY_DEFAULT, null, callback);
-};
+}
 
 function amixerUpdate() {
   readVolume(function(percent) {
@@ -108,6 +108,24 @@ function amixerUpdate() {
   });
 }
 
+function syncMenuVisibility(defaultVolumeIndicatorId) {
+  if(defaultVolumeIndicatorId.visible) {
+    //hide our volume indicator
+    indicatorIconId.hide();
+    //hide our volume slider
+    itemId.actor.hide();
+    //show default volume sliders
+    statusMenuId._volume._volumeMenu.actor.show();
+  } else {
+    //show our volume indicator
+    indicatorIconId.show();
+    //show our volume slider
+    itemId.actor.show();
+    //hide default volume sliders
+    statusMenuId._volume._volumeMenu.actor.hide();
+  }
+}
+
 function init() {
 }
 
@@ -115,18 +133,19 @@ function enable() {
   //create the sliderId
   sliderId = new Slider.Slider(0);
   sliderId.connect('value-changed', onValueChanged);
-  
-  //create the initial icons      
+       
   let iconName = getAudioIcon(sliderId._getCurrentValue() * 100);
+  //CREATE: menu icon
   menuIconId = new St.Icon({ icon_name: iconName,
     style_class: 'system-status-icon' });
+  //CREATE: the indicator icon
   indicatorIconId = new St.Icon({ icon_name: iconName,
     style_class: 'system-status-icon' });
   
   //read volume async
   amixerUpdate();
   
-  //create the popup menu itemId
+  //CREATE: the popup menu item
   itemId = new PopupMenu.PopupBaseMenuItem({ activate: false });
   itemId.actor.add(menuIconId);
   itemId.actor.add(sliderId.actor, { expand: true });
@@ -138,32 +157,12 @@ function enable() {
   statusMenuId._indicators.insert_child_above(indicatorIconId, statusMenuId._volume.indicators);
   
   //if default volume indicator is visible
-  if(statusMenuId._volume.indicators.visible)
-    indicatorIconId.hide(); //hide our indicator
-  else 
-    statusMenuId._volume._volumeMenu.actor.hide(); //else hide default volume slider
+  syncMenuVisibility(statusMenuId._volume.indicators.visible);
   
   //on default volume indicator visibility change
   volumeVisibleId = statusMenuId._volume.indicators.connect('notify::visible',
     function(a) {
-      //if is visible
-      if(a.visible) {
-        //hide our volume indicator
-        indicatorIconId.hide();
-        //hide our volume slider
-        itemId.actor.hide();
-        
-        //show default volume sliderIds
-        statusMenuId._volume._volumeMenu.actor.show();
-      } else {
-        //show our volume indicator
-        indicatorIconId.show();
-        //show our volume slider
-        itemId.actor.show();
-        
-        //hide default volume sliderIds
-        statusMenuId._volume._volumeMenu.actor.hide();
-      }
+      syncMenuVisibility(a);
     });
 }
 
@@ -172,10 +171,14 @@ function disable() {
   
   statusMenuId._volume.indicators.disconnect(volumeVisibleId);
   
-  //restore the default volume sliderIds
+  //restore the default volume sliders
   statusMenuId._volume._volumeMenu.actor.show();
   
-  //remove our indicator
-  statusMenuId._indicators.remove_child(indicatorIconId);
+  //RELEASE: the popup menu item
   itemId.destroy();
+  
+  //RELEASE: indicator icon
+  indicatorIconId.destroy();
+  //RELEASE: menu icon
+  menuIconId.destroy();
 }
