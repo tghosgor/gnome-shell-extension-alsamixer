@@ -26,9 +26,9 @@ const Gio = imports.gi.Gio;
 const Lang = imports.lang;
 const Mainloop = imports.mainloop;
 
-let statusMenuId = Main.panel.statusArea.aggregateMenu;
-let timeoutId, labelId, itemId, indicatorIconId = null, sliderId, menuIconId, volumeVisibleId;
-let amixerStdoutId, outReaderId, dataStdoutId;
+let statusMenu = Main.panel.statusArea.aggregateMenu;
+let label, menuItem, indicatorIcon = null, slider, menuIcon, volumeVisible;
+let timeoutId, amixerStdoutId, outReaderId, dataStdoutId;
 
 //returns audio icon name based on percent
 function getAudioIcon(percent) {
@@ -37,19 +37,19 @@ function getAudioIcon(percent) {
   return audioIcons[iconIndex];
 }
 
-//sliderId changed
+//slider changed
 function onValueChanged() {
-  let [success, pid] = GLib.spawn_async('/', ['/usr/bin/amixer', 'set', 'Master', '%d'.format(parseInt(sliderId._getCurrentValue() * 64))], ['LANGC=C'], GLib.SpawnFlags.STDOUT_TO_DEV_NULL, null);
+  let [success, pid] = GLib.spawn_async('/', ['/usr/bin/amixer', 'set', 'Master', '%d'.format(parseInt(slider._getCurrentValue() * 64))], ['LANGC=C'], GLib.SpawnFlags.STDOUT_TO_DEV_NULL, null);
   if(success)
   {
     //prevent slider to move after set due to rounding error
     //expand to 64, then expand to 100 then normalize to 1
-    let rounded = Math.round(parseInt(sliderId._getCurrentValue() * 64) * (100 / 64)) / 100;
-    sliderId.setValue(rounded);
+    let rounded = Math.round(parseInt(slider._getCurrentValue() * 64) * (100 / 64)) / 100;
+    slider.setValue(rounded);
     //get appropriate icon name
-    let iconName = getAudioIcon(sliderId._getCurrentValue() * 100);
-    menuIconId.set_icon_name(iconName);
-    indicatorIconId.set_icon_name(iconName);
+    let iconName = getAudioIcon(slider._getCurrentValue() * 100);
+    menuIcon.set_icon_name(iconName);
+    indicatorIcon.set_icon_name(iconName);
   }
 }
 
@@ -70,7 +70,6 @@ function readVolume(callback) {
   dataStdoutId.set_buffer_size(512);
   
   let cb = amixerReadCb.bind(this, callback);
-  
   dataStdoutId.fill_async(-1, GLib.PRIORITY_DEFAULT, null, cb);
 }
 
@@ -90,39 +89,42 @@ function amixerReadCb(callback, stream, result) {
   if(values != null && !isNaN(values[1]))
   {
     callback(values[1]);
+    dataStdoutId.close(null);
     return;
-  } else  
-    dataStdoutId.fill_async(-1, GLib.PRIORITY_DEFAULT, null, callback);
+  } else {
+	let cb = amixerReadCb.bind(this, callback);
+    dataStdoutId.fill_async(-1, GLib.PRIORITY_DEFAULT, null, cb);
+  }
 }
 
 function amixerUpdate() {
   readVolume(function(percent) {
-    //set the value of the sliderId
-    sliderId.setValue(parseFloat(percent / 100));
+    //set the value of the slider
+    slider.setValue(parseFloat(percent / 100));
     //set icons
-    let iconName = getAudioIcon(sliderId._getCurrentValue() * 100);
-    indicatorIconId.set_icon_name(iconName);
-    menuIconId.set_icon_name(iconName);
-  
-    timeoutId = Mainloop.timeout_add_seconds(1, amixerUpdate);
+    let iconName = getAudioIcon(slider._getCurrentValue() * 100);
+    indicatorIcon.set_icon_name(iconName);
+    menuIcon.set_icon_name(iconName);
   });
+  
+  return true;
 }
 
 function syncMenuVisibility(defaultVolumeIndicatorId) {
   if(defaultVolumeIndicatorId.visible) {
     //hide our volume indicator
-    indicatorIconId.hide();
+    indicatorIcon.hide();
     //hide our volume slider
-    itemId.actor.hide();
+    menuItem.actor.hide();
     //show default volume sliders
-    statusMenuId._volume._volumeMenu.actor.show();
+    statusMenu._volume._volumeMenu.actor.show();
   } else {
     //show our volume indicator
-    indicatorIconId.show();
+    indicatorIcon.show();
     //show our volume slider
-    itemId.actor.show();
+    menuItem.actor.show();
     //hide default volume sliders
-    statusMenuId._volume._volumeMenu.actor.hide();
+    statusMenu._volume._volumeMenu.actor.hide();
   }
 }
 
@@ -130,37 +132,39 @@ function init() {
 }
 
 function enable() {
-  //create the sliderId
-  sliderId = new Slider.Slider(0);
-  sliderId.connect('value-changed', onValueChanged);
+  //create the slider
+  slider = new Slider.Slider(0);
+  slider.connect('value-changed', onValueChanged);
        
-  let iconName = getAudioIcon(sliderId._getCurrentValue() * 100);
+  let iconName = getAudioIcon(slider._getCurrentValue() * 100);
   //CREATE: menu icon
-  menuIconId = new St.Icon({ icon_name: iconName,
+  menuIcon = new St.Icon({ icon_name: iconName,
     style_class: 'system-status-icon' });
   //CREATE: the indicator icon
-  indicatorIconId = new St.Icon({ icon_name: iconName,
+  indicatorIcon = new St.Icon({ icon_name: iconName,
     style_class: 'system-status-icon' });
   
   //read volume async
   amixerUpdate();
+  //start amixer update interval
+  timeoutId = Mainloop.timeout_add_seconds(1, amixerUpdate);
   
   //CREATE: the popup menu item
-  itemId = new PopupMenu.PopupBaseMenuItem({ activate: false });
-  itemId.actor.add(menuIconId);
-  itemId.actor.add(sliderId.actor, { expand: true });
+  menuItem = new PopupMenu.PopupBaseMenuItem({ activate: false });
+  menuItem.actor.add(menuIcon);
+  menuItem.actor.add(slider.actor, { expand: true });
   
   //add to status menu
-  statusMenuId.menu.addMenuItem(itemId, 0);
+  statusMenu.menu.addMenuItem(menuItem, 0);
   
   //add our icon to indicators
-  statusMenuId._indicators.insert_child_above(indicatorIconId, statusMenuId._volume.indicators);
+  statusMenu._indicators.insert_child_above(indicatorIcon, statusMenu._volume.indicators);
   
   //if default volume indicator is visible
-  syncMenuVisibility(statusMenuId._volume.indicators.visible);
+  syncMenuVisibility(statusMenu._volume.indicators.visible);
   
   //on default volume indicator visibility change
-  volumeVisibleId = statusMenuId._volume.indicators.connect('notify::visible',
+  volumeVisible = statusMenu._volume.indicators.connect('notify::visible',
     function(a) {
       syncMenuVisibility(a);
     });
@@ -169,16 +173,16 @@ function enable() {
 function disable() {
   Mainloop.source_remove(timeoutId);
   
-  statusMenuId._volume.indicators.disconnect(volumeVisibleId);
+  statusMenu._volume.indicators.disconnect(volumeVisible);
   
   //restore the default volume sliders
-  statusMenuId._volume._volumeMenu.actor.show();
+  statusMenu._volume._volumeMenu.actor.show();
   
   //RELEASE: the popup menu item
-  itemId.destroy();
+  menuItem.destroy();
   
   //RELEASE: indicator icon
-  indicatorIconId.destroy();
+  indicatorIcon.destroy();
   //RELEASE: menu icon
-  menuIconId.destroy();
+  menuIcon.destroy();
 }
