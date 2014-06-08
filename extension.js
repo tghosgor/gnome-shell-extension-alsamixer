@@ -33,15 +33,20 @@ let amixerStdoutId, outReaderId, dataStdoutId;
 //returns audio icon name based on percent
 function getAudioIcon(percent) {
   let audioIcons = new Array('audio-volume-muted-symbolic', 'audio-volume-low-symbolic', 'audio-volume-medium-symbolic', 'audio-volume-high-symbolic');
-  let iconIndex = (percent ? parseInt(percent / (101 / 3)) + 1 : 0);
+  let iconIndex = (percent ? parseInt(percent / (100.1 / 3)) + 1 : 0);
   return audioIcons[iconIndex];
 }
 
 //sliderId changed
 function onValueChanged() {
-  let [isOk, pid] = GLib.spawn_async('/', ['/usr/bin/amixer', 'set', 'Master', '%d'.format(parseInt(sliderId._getCurrentValue() * 64))], ['LANGC=C'], GLib.SpawnFlags.STDOUT_TO_DEV_NULL, null);
-  if(isOk)
+  let [success, pid] = GLib.spawn_async('/', ['/usr/bin/amixer', 'set', 'Master', '%d'.format(parseInt(sliderId._getCurrentValue() * 64))], ['LANGC=C'], GLib.SpawnFlags.STDOUT_TO_DEV_NULL, null);
+  if(success)
   {
+	//prevent slider to move after set due to rounding error
+	//expand to 64, then expand to 100 then normalize to 1
+	let rounded = Math.round(parseInt(sliderId._getCurrentValue() * 64) * (100 / 64)) / 100;
+    sliderId.setValue(rounded);
+    //get appropriate icon name
     let iconName = getAudioIcon(sliderId._getCurrentValue() * 100);
     menuIconId.set_icon_name(iconName);
     indicatorIconId.set_icon_name(iconName);
