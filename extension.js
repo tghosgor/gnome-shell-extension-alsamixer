@@ -27,8 +27,8 @@ const Lang = imports.lang;
 const Mainloop = imports.mainloop;
 
 let statusMenu = Main.panel.statusArea.aggregateMenu;
-let label, menuItem, indicatorIcon = null, slider, menuIcon, volumeVisible;
-let timeoutId, amixerStdoutId, outReaderId, dataStdoutId;
+let label, menuItem, indicatorIcon = null, slider, menuIcon, amixerStdout, outReader, dataStdout, limitMax = 64;
+let volumeVisibleId, timeoutId;
 
 //returns audio icon name based on percent
 function getAudioIcon(percent) {
@@ -39,12 +39,12 @@ function getAudioIcon(percent) {
 
 //slider changed
 function onValueChanged() {
-  let [success, pid] = GLib.spawn_async('/', ['/usr/bin/amixer', 'set', 'Master', '%d'.format(parseInt(slider._getCurrentValue() * 64))], ['LANGC=C'], GLib.SpawnFlags.STDOUT_TO_DEV_NULL, null);
+  let [success, pid] = GLib.spawn_async('/', ['/usr/bin/amixer', 'set', 'Master', '%d'.format(parseInt(slider._getCurrentValue() * limitMax))], ['LANGC=C'], GLib.SpawnFlags.STDOUT_TO_DEV_NULL, null);
   if(success)
   {
     //prevent slider to move after set due to rounding error
-    //expand to 64, then expand to 100 then normalize to 1
-    let rounded = Math.round(parseInt(slider._getCurrentValue() * 64) * (100 / 64)) / 100;
+    //expand to limitMax, then expand to 100 then normalize to 1
+    let rounded = Math.round(parseInt(slider._getCurrentValue() * limitMax) * (100 / limitMax)) / 100;
     slider.setValue(rounded);
     //get appropriate icon name
     let iconName = getAudioIcon(slider._getCurrentValue() * 100);
@@ -60,40 +60,43 @@ function readVolume(callback) {
     ['/usr/bin/amixer', 'get', 'Master'], ['LANG=C'], 0, null);
   GLib.close(stderr);
   GLib.close(stdin);
-  amixerStdoutId = stdout;
+  amixerStdout = stdout;
   
-  dataStdoutId = new Gio.DataInputStream({
+  dataStdout = new Gio.DataInputStream({
     base_stream: new Gio.UnixInputStream({fd: stdout, close_fd: true})
   });
   
   //allocate enough buffer space
-  dataStdoutId.set_buffer_size(512);
+  dataStdout.set_buffer_size(512);
   
   let cb = amixerReadCb.bind(this, callback);
-  dataStdoutId.fill_async(-1, GLib.PRIORITY_DEFAULT, null, cb);
+  dataStdout.fill_async(-1, GLib.PRIORITY_DEFAULT, null, cb);
 }
 
 function amixerReadCb(callback, stream, result) {
-  let cnt = dataStdoutId.fill_finish(result);
+  let cnt = dataStdout.fill_finish(result);
 
   if (cnt == 0) {
-    dataStdoutId.close(null);
+    dataStdout.close(null);
     return;
   }
     
-  let data = dataStdoutId.peek_buffer();
+  let data = dataStdout.peek_buffer();
   
   let re = /\[(\d{1,3})\%\]/m;
   let values = re.exec(data);
   
   if(values != null && !isNaN(values[1]))
   {
+	let re = /Limits: Playback 0 - (\d{1,4})/m;
+	limitMax = re.exec(data)[1];
+  
     callback(values[1]);
-    dataStdoutId.close(null);
+    dataStdout.close(null);
     return;
   } else {
 	let cb = amixerReadCb.bind(this, callback);
-    dataStdoutId.fill_async(-1, GLib.PRIORITY_DEFAULT, null, cb);
+    dataStdout.fill_async(-1, GLib.PRIORITY_DEFAULT, null, cb);
   }
 }
 
@@ -110,8 +113,8 @@ function amixerUpdate() {
   return true;
 }
 
-function syncMenuVisibility(defaultVolumeIndicatorId) {
-  if(defaultVolumeIndicatorId.visible) {
+function syncMenuVisibility(defaultVolumeIndicator) {
+  if(defaultVolumeIndicator.visible) {
     //hide our volume indicator
     indicatorIcon.hide();
     //hide our volume slider
@@ -164,7 +167,7 @@ function enable() {
   syncMenuVisibility(statusMenu._volume.indicators.visible);
   
   //on default volume indicator visibility change
-  volumeVisible = statusMenu._volume.indicators.connect('notify::visible',
+  volumeVisibleId = statusMenu._volume.indicators.connect('notify::visible',
     function(a) {
       syncMenuVisibility(a);
     });
@@ -173,7 +176,7 @@ function enable() {
 function disable() {
   Mainloop.source_remove(timeoutId);
   
-  statusMenu._volume.indicators.disconnect(volumeVisible);
+  statusMenu._volume.indicators.disconnect(volumeVisibleId);
   
   //restore the default volume sliders
   statusMenu._volume._volumeMenu.actor.show();
