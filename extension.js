@@ -27,7 +27,7 @@ const Lang = imports.lang;
 const Mainloop = imports.mainloop;
 
 let statusMenu = Main.panel.statusArea.aggregateMenu;
-let label, menuItem, indicatorIcon = null, slider, menuIcon, amixerStdout, outReader, dataStdout, limitMax = 64;
+let label, menuItem, indicatorIcon = null, slider, menuIcon, amixerStdout, outReader, dataStdout, limitMax = 0;
 let volumeVisibleId, timeoutId;
 
 //returns audio icon name based on percent
@@ -39,13 +39,15 @@ function getAudioIcon(percent) {
 
 //slider changed
 function onValueChanged() {
-  let [success, pid] = GLib.spawn_async('/', ['/usr/bin/amixer', 'set', 'Master', '%d'.format(parseInt(slider._getCurrentValue() * limitMax))], ['LANGC=C'], GLib.SpawnFlags.STDOUT_TO_DEV_NULL, null);
+  let [success, pid] = GLib.spawn_async('/', ['/usr/bin/amixer', 'set', 'Master', '-M', '%d%%'.format(Math.round(slider._getCurrentValue() * 100))], ['LANGC=C'], GLib.SpawnFlags.STDOUT_TO_DEV_NULL, null);
+  //log('%d%%'.format(Math.round(slider._getCurrentValue() * 100)));
   if(success)
   {
     //prevent slider to move after set due to rounding error
     //expand to limitMax, then expand to 100 then normalize to 1
-    let rounded = Math.round(parseInt(slider._getCurrentValue() * limitMax) * (100 / limitMax)) / 100;
-    slider.setValue(rounded);
+    //let expandToLimit = slider._getCurrentValue() * limitMax;
+    //let rounded = Math.round(Math.round(slider._getCurrentValue() * limitMax) * (100 / limitMax)) / 100;
+    //slider.setValue(rounded);
     //get appropriate icon name
     let iconName = getAudioIcon(slider._getCurrentValue() * 100);
     menuIcon.set_icon_name(iconName);
@@ -53,11 +55,9 @@ function onValueChanged() {
   }
 }
 
-//expensive because of GLib.spawn_command_line_sync
-//only used on enable anyway
 function readVolume(callback) {
   let [success, pid, stdin, stdout, stderr] = GLib.spawn_async_with_pipes(null,
-    ['/usr/bin/amixer', 'get', 'Master'], ['LANG=C'], 0, null);
+    ['/usr/bin/amixer', 'get', 'Master', '-M'], ['LANG=C'], 0, null);
   GLib.close(stderr);
   GLib.close(stdin);
   amixerStdout = stdout;
@@ -88,8 +88,11 @@ function amixerReadCb(callback, stream, result) {
   
   if(values != null && !isNaN(values[1]))
   {
-	let re = /Limits: Playback 0 - (\d{1,4})/m;
-	limitMax = re.exec(data)[1];
+	if (limitMax == 0)
+	{
+	  let re = /Limits: Playback 0 - (\d{1,4})/m;
+	  limitMax = re.exec(data)[1];
+    }
   
     callback(values[1]);
     dataStdout.close(null);
@@ -102,8 +105,11 @@ function amixerReadCb(callback, stream, result) {
 
 function amixerUpdate() {
   readVolume(function(percent) {
-    //set the value of the slider
-    slider.setValue(parseFloat(percent / 100));
+    //set the value of the slider with 4% threshold margin
+    let realValue = percent / 100;
+    if (Math.abs(slider._getCurrentValue() - realValue) > 0.04) {
+		slider.setValue(percent / 100);
+	}
     //set icons
     let iconName = getAudioIcon(slider._getCurrentValue() * 100);
     indicatorIcon.set_icon_name(iconName);
