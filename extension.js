@@ -76,7 +76,10 @@ function readVolume(callback) {
 function amixerReadCb(callback, stream, result) {
   let cnt = dataStdout.fill_finish(result);
 
-  if (cnt == 0) {
+  if (cnt < 0) {
+	return;
+  }
+  else if (cnt == 0) {
     dataStdout.close(null);
     return;
   }
