@@ -152,7 +152,7 @@ function enable() {
   let iconName = getAudioIcon(slider._getCurrentValue() * 100);
   //CREATE: menu icon
   menuIcon = new St.Icon({ icon_name: iconName,
-    style_class: 'system-status-icon' });
+    style_class: 'popup-menu-icon' });
   //CREATE: the indicator icon
   indicatorIcon = new St.Icon({ icon_name: iconName,
     style_class: 'system-status-icon' });
