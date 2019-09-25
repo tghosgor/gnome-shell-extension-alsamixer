@@ -162,7 +162,11 @@ var Controller = class {
       //set the value of the slider with 4% threshold margin
       let realValue = percent / 100;
       if (Math.abs(this._menu.slider.value - realValue) > 0.04) {
-        this._menu.slider.value = percent / 100;
+        if (typeof this._menu.slider.setValue === "function") {
+          this._menu.slider.setValue(percent / 100);
+        } else {
+          this._menu.slider.value = percent / 100;
+        }
       }
 
       this._updateIcons();
