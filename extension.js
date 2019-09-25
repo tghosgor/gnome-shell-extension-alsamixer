@@ -43,7 +43,7 @@ var Menu = class extends PopupMenu.PopupBaseMenuItem {
     this.icon = new St.Icon({style_class: 'popup-menu-icon'});
     this.slider = new Slider.Slider(0);
 
-    this.actor.add(this.icon.actor);
+    this.actor.add(this.icon);
     this.actor.add(this.slider.actor, {expand: true});
   }
 };
