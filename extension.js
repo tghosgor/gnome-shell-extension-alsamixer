@@ -46,11 +46,6 @@ var Menu = class extends PopupMenu.PopupBaseMenuItem {
     this.actor.add(this.icon.actor);
     this.actor.add(this.slider.actor, {expand: true});
   }
-  
-  destructor() {
-    this.slider.destroy();
-    this.icon.destroy();
-  }
 };
 
 var Indicator = class extends PanelMenu.SystemIndicator {
@@ -81,15 +76,16 @@ var Controller = class {
     aggregateMenu.menu.addMenuItem(this._menu, 0);
   }
 
-  destructor() {
+  destroy() {
+    aggregateMenu._indicators.remove_child(this._indicator.indicators);
+
+    this._menu.destroy();
+
     Mainloop.source_remove(this._timeoutId);
 
     aggregateMenu._volume.indicators.disconnect(this._volumeVisibleId);
 
     aggregateMenu._volume._volumeMenu.actor.show();
-
-    this._menu.destroy();
-    this._indicator.destroy();
   }
 
   _onIndicatorScroll(indicator, e) {
