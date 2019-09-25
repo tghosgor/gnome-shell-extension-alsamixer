@@ -64,7 +64,11 @@ var Controller = class {
     this._menu = new Menu();
 
     this._indicator.indicators.connect('scroll-event', this._onIndicatorScroll.bind(this));
-    this._menu.slider.connect('notify::value', this._onSliderValueChanged.bind(this));
+    try {
+      this._menu.slider.connect('notify::value', this._onSliderValueChanged.bind(this));
+    } catch {
+      this._menu.slider.connect('value-changed', this._onSliderValueChanged.bind(this));
+    }
 
     this._timeoutId = Mainloop.timeout_add_seconds(1, this._amixerUpdate.bind(this));
     this._amixerUpdate();
@@ -162,10 +166,10 @@ var Controller = class {
       //set the value of the slider with 4% threshold margin
       let realValue = percent / 100;
       if (Math.abs(this._menu.slider.value - realValue) > 0.04) {
-        if (typeof this._menu.slider.setValue === "function") {
-          this._menu.slider.setValue(percent / 100);
-        } else {
+        try {
           this._menu.slider.value = percent / 100;
+        } catch {
+          this._menu.slider.setValue(percent / 100);
         }
       }
 
